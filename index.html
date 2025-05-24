@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>YouTube Views Dataset Generator</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -186,10 +187,24 @@
                     <option value="mega">Mega (1M+ subs)</option>
                 </select>
             </div>
+            
+            <div class="control-group">
+                <label for="growthPattern">Growth Pattern:</label>
+                <select id="growthPattern">
+                    <option value="organic">Organic (Mixed)</option>
+                    <option value="exponential">Exponential Growth</option>
+                    <option value="logarithmic">Logarithmic Growth</option>
+                    <option value="linear">Linear Growth</option>
+                    <option value="scurve">S-Curve Growth</option>
+                    <option value="burst">Burst-and-Fade</option>
+                    <option value="cyclic">Cyclic/Seasonal</option>
+                </select>
+            </div>
         </div>
         
         <div style="text-align: center;">
             <button class="btn" onclick="generateData()">🚀 Generate Dataset</button>
+            <button class="btn" onclick="showGrowthChart()">📈 View Growth Chart</button>
             <button class="btn" onclick="downloadExcel()">📊 Download Excel</button>
             <button class="btn" onclick="downloadCSV()">📄 Download CSV</button>
         </div>
@@ -198,6 +213,13 @@
             <div class="stats" id="stats"></div>
         </div>
         
+        <div id="chartContainer" style="display: none;">
+            <h3>📈 Growth Pattern Visualization</h3>
+            <div style="background: white; padding: 20px; border-radius: 15px; margin: 20px 0;">
+                <canvas id="growthChart" width="400" height="200"></canvas>
+            </div>
+            <div id="growthDescription" style="background: #f8f9fa; padding: 20px; border-radius: 15px; margin: 20px 0;"></div>
+        </div>
         <div id="previewContainer" style="display: none;">
             <h3>📋 Data Preview (First 20 rows)</h3>
             <div class="data-preview" id="dataPreview"></div>
@@ -206,12 +228,58 @@
 
     <script>
         let generatedData = [];
+        let currentChart = null;
+
+        function applyGrowthPattern(baseViews, dayIndex, totalDays, pattern) {
+            const progress = dayIndex / totalDays;
+            let multiplier = 1;
+            
+            switch(pattern) {
+                case 'exponential':
+                    multiplier = Math.exp(progress * 3); // Exponential growth
+                    break;
+                case 'logarithmic':
+                    multiplier = Math.log(1 + progress * 9) + 1; // Logarithmic growth
+                    break;
+                case 'linear':
+                    multiplier = 1 + progress * 2; // Linear growth
+                    break;
+                case 'scurve':
+                    // Sigmoid function (S-curve)
+                    multiplier = 1 + 4 / (1 + Math.exp(-10 * (progress - 0.5)));
+                    break;
+                case 'burst':
+                    // Burst and fade pattern
+                    if (progress < 0.3) {
+                        multiplier = 1 + Math.exp(progress * 8) * 0.1;
+                    } else {
+                        multiplier = Math.max(0.5, 3 * Math.exp(-(progress - 0.3) * 5));
+                    }
+                    break;
+                case 'cyclic':
+                    // Strong seasonal/cyclic pattern
+                    multiplier = 1 + 1.5 * Math.sin(progress * 8 * Math.PI) + 
+                                 0.5 * Math.sin(progress * 2 * Math.PI);
+                    break;
+                case 'organic':
+                default:
+                    // Mixed organic growth with multiple factors
+                    const seasonal = 1 + 0.3 * Math.sin(progress * 4 * Math.PI);
+                    const trending = 1 + 0.5 * Math.sin(progress * 12 * Math.PI);
+                    const longTerm = 1 + progress * 1.5;
+                    multiplier = seasonal * trending * longTerm * 0.4;
+                    break;
+            }
+            
+            return Math.max(0.1, multiplier);
+        }
 
         function generateData() {
             const startDate = new Date(document.getElementById('startDate').value);
             const endDate = new Date(document.getElementById('endDate').value);
             const channelType = document.getElementById('channelType').value;
             const channelSize = document.getElementById('channelSize').value;
+            const growthPattern = document.getElementById('growthPattern').value;
             
             // Channel size multipliers
             const sizeMultipliers = {
@@ -237,57 +305,52 @@
             const currentDate = new Date(startDate);
             let cumulativeViews = 0;
             let videoCount = 0;
+            let dayIndex = 0;
             
-            // Generate seasonal baseline
-            const seasonalTrend = (date) => {
-                const dayOfYear = Math.floor((date - new Date(date.getFullYear(), 0, 0)) / (1000 * 60 * 60 * 24));
-                return 1 + 0.3 * Math.sin((dayOfYear / 365) * 2 * Math.PI);
-            };
+            const totalDays = Math.floor((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
             
             while (currentDate <= endDate) {
                 const dayOfWeek = currentDate.getDay();
                 const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
                 const isMonday = dayOfWeek === 1;
                 
-                // Base daily views with seasonal variation
-                let dailyViews = multiplier.base * seasonalTrend(currentDate);
+                // Base daily views
+                let dailyViews = multiplier.base;
+                
+                // Apply growth pattern
+                const growthMultiplier = applyGrowthPattern(dailyViews, dayIndex, totalDays, growthPattern);
+                dailyViews *= growthMultiplier;
                 
                 // Weekend/weekday adjustment
                 if (isWeekend) {
                     dailyViews *= pattern.weekendBoost;
                 } else if (isMonday) {
-                    dailyViews *= 0.9; // Monday dip
+                    dailyViews *= 0.9;
                 }
                 
-                // Random variation
-                const randomFactor = 1 + (Math.random() - 0.5) * multiplier.variance;
+                // Random variation (reduced for clearer pattern visibility)
+                const randomFactor = 1 + (Math.random() - 0.5) * (multiplier.variance * 0.5);
                 dailyViews *= randomFactor;
                 
-                // Trending content (random spikes)
-                if (Math.random() < pattern.trending) {
-                    dailyViews *= (2 + Math.random() * 3);
-                }
-                
-                // Video upload simulation (assume 3-4 videos per week)
+                // Video upload simulation
                 const hasUpload = Math.random() < 0.5;
                 const videosUploaded = hasUpload ? Math.floor(Math.random() * 2) + 1 : 0;
                 videoCount += videosUploaded;
                 
                 if (hasUpload) {
-                    dailyViews *= (1 + videosUploaded * 0.3);
+                    dailyViews *= (1 + videosUploaded * 0.2);
                 }
                 
-                dailyViews = Math.round(dailyViews);
+                dailyViews = Math.round(Math.max(0, dailyViews));
                 cumulativeViews += dailyViews;
                 
                 // Engagement metrics
-                const avgViewDuration = 180 + Math.random() * 120; // 3-5 minutes
+                const avgViewDuration = 180 + Math.random() * 120;
                 const likes = Math.round(dailyViews * (0.02 + Math.random() * 0.03));
                 const comments = Math.round(dailyViews * (0.005 + Math.random() * 0.01));
                 const shares = Math.round(dailyViews * (0.001 + Math.random() * 0.005));
                 const subscribers = Math.round(dailyViews * (0.001 + Math.random() * 0.002));
                 
-                // CTR and retention
                 const ctr = 0.02 + Math.random() * 0.08;
                 const retention = 0.3 + Math.random() * 0.4;
                 
@@ -312,10 +375,146 @@
                 });
                 
                 currentDate.setDate(currentDate.getDate() + 1);
+                dayIndex++;
             }
             
             displayStats();
             displayPreview();
+        }
+
+        function showGrowthChart() {
+            if (generatedData.length === 0) {
+                alert('Please generate data first!');
+                return;
+            }
+
+            const growthPattern = document.getElementById('growthPattern').value;
+            
+            // Prepare chart data (sample every 7th day for cleaner visualization)
+            const chartData = generatedData.filter((_, index) => index % 7 === 0);
+            const labels = chartData.map(row => row.Date);
+            const dailyViews = chartData.map(row => row.Views);
+            const cumulativeViews = chartData.map(row => row.CumulativeViews);
+
+            const ctx = document.getElementById('growthChart').getContext('2d');
+            
+            // Destroy existing chart if it exists
+            if (currentChart) {
+                currentChart.destroy();
+            }
+
+            currentChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Daily Views',
+                            data: dailyViews,
+                            borderColor: '#FF0000',
+                            backgroundColor: 'rgba(255, 0, 0, 0.1)',
+                            tension: 0.4,
+                            fill: true
+                        },
+                        {
+                            label: 'Cumulative Views',
+                            data: cumulativeViews,
+                            borderColor: '#4285F4',
+                            backgroundColor: 'rgba(66, 133, 244, 0.1)',
+                            tension: 0.4,
+                            yAxisID: 'y1'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: `Growth Pattern: ${growthPattern.toUpperCase()}`,
+                            font: { size: 16, weight: 'bold' }
+                        },
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        }
+                    },
+                    scales: {
+                        x: {
+                            display: true,
+                            title: { display: true, text: 'Date' }
+                        },
+                        y: {
+                            display: true,
+                            position: 'left',
+                            title: { display: true, text: 'Daily Views' }
+                        },
+                        y1: {
+                            display: true,
+                            position: 'right',
+                            title: { display: true, text: 'Cumulative Views' },
+                            grid: { drawOnChartArea: false }
+                        }
+                    }
+                }
+            });
+
+            // Show growth pattern description
+            displayGrowthDescription(growthPattern);
+            document.getElementById('chartContainer').style.display = 'block';
+        }
+
+        function displayGrowthDescription(pattern) {
+            const descriptions = {
+                organic: {
+                    title: "🌱 Organic Growth (Mixed Pattern)",
+                    description: "Combines multiple realistic factors including seasonal trends, viral moments, and steady growth. This mimics real YouTube channel development with natural ups and downs.",
+                    characteristics: ["Variable growth rate", "Seasonal fluctuations", "Random viral spikes", "Long-term upward trend"]
+                },
+                exponential: {
+                    title: "🚀 Exponential Growth",
+                    description: "Views grow at an increasing rate over time. Common for viral content or channels that hit the YouTube algorithm sweet spot.",
+                    characteristics: ["Slow start, rapid acceleration", "Compounds over time", "Can indicate viral content", "Unsustainable long-term"]
+                },
+                logarithmic: {
+                    title: "📈 Logarithmic Growth",
+                    description: "Rapid initial growth that gradually slows down. Typical for channels reaching market saturation or established content creators.",
+                    characteristics: ["Fast early growth", "Diminishing returns", "Reaches plateau", "Sustainable pattern"]
+                },
+                linear: {
+                    title: "📏 Linear Growth",
+                    description: "Steady, consistent growth rate over time. Represents channels with reliable content schedules and steady audience building.",
+                    characteristics: ["Consistent growth rate", "Predictable pattern", "Sustainable long-term", "Good for forecasting"]
+                },
+                scurve: {
+                    title: "📊 S-Curve Growth (Sigmoidal)",
+                    description: "Slow start, rapid middle growth, then plateau. Classic adoption curve seen in successful channel launches and trend lifecycles.",
+                    characteristics: ["Three distinct phases", "Slow adoption period", "Rapid growth phase", "Market saturation plateau"]
+                },
+                burst: {
+                    title: "💥 Burst-and-Fade Growth",
+                    description: "Rapid initial spike followed by decline. Common for trending topics, viral moments, or seasonal content.",
+                    characteristics: ["Sharp initial spike", "Quick peak achievement", "Gradual decline", "Event-driven pattern"]
+                },
+                cyclic: {
+                    title: "🔄 Cyclic/Seasonal Growth",
+                    description: "Regular patterns of peaks and valleys. Typical for channels with seasonal content, gaming releases, or holiday-themed content.",
+                    characteristics: ["Predictable cycles", "Seasonal peaks", "Regular patterns", "Event-correlated"]
+                }
+            };
+
+            const info = descriptions[pattern];
+            const html = `
+                <h4>${info.title}</h4>
+                <p><strong>Description:</strong> ${info.description}</p>
+                <p><strong>Key Characteristics:</strong></p>
+                <ul>
+                    ${info.characteristics.map(char => `<li>${char}</li>`).join('')}
+                </ul>
+            `;
+            
+            document.getElementById('growthDescription').innerHTML = html;
         }
         
         function displayStats() {
